@@ -1,0 +1,27 @@
+[
+  {
+    "ci_id": "CAM-001",
+    "name": "Demo Camera",
+    "ip": "192.0.2.10",
+    "mac": "02:00:00:00:00:10",
+    "manufacturer": "Hanwha",
+    "model": "QNV-6082R",
+    "device_type": "IP_CAMERA",
+    "branch_id": "BRANCH-001",
+    "zone_id": "ZONE-001",
+    "criticality": null,
+    "enabled": true
+  },
+  {
+    "ci_id": "NVR-001",
+    "name": "Demo NVR",
+    "ip": "192.0.2.11",
+    "mac": "02:00:00:00:00:11",
+    "manufacturer": "Hanwha",
+    "model": "XRN-6420DB4",
+    "device_type": "NVR",
+    "branch_id": "BRANCH-001",
+    "zone_id": "ZONE-001",
+    "enabled": true
+  }
+]

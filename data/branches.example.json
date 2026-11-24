@@ -1,0 +1,10 @@
+[
+  {
+    "branch_id": "BRANCH-001",
+    "name": "Sucursal Demo",
+    "latitude": -33.5,
+    "longitude": -70.6,
+    "region": "Demo",
+    "country": "Chile"
+  }
+]

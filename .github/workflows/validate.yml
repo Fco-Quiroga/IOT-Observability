@@ -1,0 +1,21 @@
+name: Local validation
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+      - name: Generate sample outputs without network
+        run: |
+          mkdir -p /tmp/iot-demo
+          for k in cameras branches zones; do cp data/$k.example.json /tmp/iot-demo/$k.json; done
+          for k in configure topology export; do python -m app.cli "$k" --inventory /tmp/iot-demo --registry out/demo-state/identities.json --full; done
+          python -m app.cli upload
+      - name: Validate official schema when vendored
+        run: |
+          if test -f schemas/extension.schema.json; then python scripts/validate_extension.py --schema-dir schemas; else echo 'Official schema not vendored; only YAML structure tests executed'; fi
