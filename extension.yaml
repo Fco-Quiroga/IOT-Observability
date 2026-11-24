@@ -1,0 +1,212 @@
+name: custom:bank-iot-snmp
+version: 0.2.0
+minDynatraceVersion: 1.333.0
+author:
+  name: IoT Observability
+metrics:
+- key: bank.iot.snmp.cpu.idle.percent
+  metadata:
+    displayName: bank.iot.snmp.cpu.idle.percent
+    description: bank.iot.snmp.cpu.idle.percent
+- key: bank.iot.snmp.interface.oper.status
+  metadata:
+    displayName: bank.iot.snmp.interface.oper.status
+    description: bank.iot.snmp.interface.oper.status
+- key: bank.iot.snmp.interface.rx.bytes
+  metadata:
+    displayName: bank.iot.snmp.interface.rx.bytes
+    description: bank.iot.snmp.interface.rx.bytes
+- key: bank.iot.snmp.interface.rx.bytes.legacy32
+  metadata:
+    displayName: bank.iot.snmp.interface.rx.bytes.legacy32
+    description: bank.iot.snmp.interface.rx.bytes.legacy32
+- key: bank.iot.snmp.interface.rx.errors
+  metadata:
+    displayName: bank.iot.snmp.interface.rx.errors
+    description: bank.iot.snmp.interface.rx.errors
+- key: bank.iot.snmp.interface.rx.errors.legacy32
+  metadata:
+    displayName: bank.iot.snmp.interface.rx.errors.legacy32
+    description: bank.iot.snmp.interface.rx.errors.legacy32
+- key: bank.iot.snmp.interface.tx.bytes
+  metadata:
+    displayName: bank.iot.snmp.interface.tx.bytes
+    description: bank.iot.snmp.interface.tx.bytes
+- key: bank.iot.snmp.interface.tx.bytes.legacy32
+  metadata:
+    displayName: bank.iot.snmp.interface.tx.bytes.legacy32
+    description: bank.iot.snmp.interface.tx.bytes.legacy32
+- key: bank.iot.snmp.interface.tx.errors
+  metadata:
+    displayName: bank.iot.snmp.interface.tx.errors
+    description: bank.iot.snmp.interface.tx.errors
+- key: bank.iot.snmp.interface.tx.errors.legacy32
+  metadata:
+    displayName: bank.iot.snmp.interface.tx.errors.legacy32
+    description: bank.iot.snmp.interface.tx.errors.legacy32
+- key: bank.iot.snmp.inventory.sample
+  metadata:
+    displayName: bank.iot.snmp.inventory.sample
+    description: bank.iot.snmp.inventory.sample
+- key: bank.iot.snmp.memory.available.kb
+  metadata:
+    displayName: bank.iot.snmp.memory.available.kb
+    description: bank.iot.snmp.memory.available.kb
+- key: bank.iot.snmp.memory.total.kb
+  metadata:
+    displayName: bank.iot.snmp.memory.total.kb
+    description: bank.iot.snmp.memory.total.kb
+- key: bank.iot.snmp.system.uptime.ticks
+  metadata:
+    displayName: bank.iot.snmp.system.uptime.ticks
+    description: SNMP agent uptime in hundredths of a second (TimeTicks); zero is
+      a valid observation.
+snmp:
+- group: Availability
+  interval:
+    minutes: 1
+  dimensions:
+  - key: bank.iot.snmp.device.ip
+    value: this:device.address
+  - key: bank.iot.snmp.device.port
+    value: this:device.port
+  subgroups:
+  - subgroup: Availability
+    table: false
+    metrics:
+    - key: bank.iot.snmp.system.uptime.ticks
+      value: oid:1.3.6.1.2.1.1.3.0
+      type: gauge
+- group: Interfaces
+  interval:
+    minutes: 5
+  dimensions:
+  - key: bank.iot.snmp.device.ip
+    value: this:device.address
+  - key: bank.iot.snmp.device.port
+    value: this:device.port
+  subgroups:
+  - subgroup: Interfaces
+    table: true
+    metrics:
+    - key: bank.iot.snmp.interface.oper.status
+      value: oid:1.3.6.1.2.1.2.2.1.8
+      type: gauge
+    featureSet: interfaces
+    dimensions:
+    - key: bank.iot.snmp.interface.name
+      value: oid:1.3.6.1.2.1.2.2.1.2
+- group: traffic
+  interval:
+    minutes: 15
+  dimensions:
+  - key: bank.iot.snmp.device.ip
+    value: this:device.address
+  - key: bank.iot.snmp.device.port
+    value: this:device.port
+  subgroups:
+  - subgroup: traffic
+    table: true
+    metrics:
+    - key: bank.iot.snmp.interface.rx.errors
+      value: oid:1.3.6.1.2.1.2.2.1.14
+      type: count
+    - key: bank.iot.snmp.interface.tx.errors
+      value: oid:1.3.6.1.2.1.2.2.1.20
+      type: count
+    - key: bank.iot.snmp.interface.rx.bytes
+      value: oid:1.3.6.1.2.1.31.1.1.1.6
+      type: count
+    - key: bank.iot.snmp.interface.tx.bytes
+      value: oid:1.3.6.1.2.1.31.1.1.1.10
+      type: count
+    featureSet: traffic
+    dimensions:
+    - key: bank.iot.snmp.interface.name
+      value: oid:1.3.6.1.2.1.2.2.1.2
+- group: traffic32
+  interval:
+    minutes: 15
+  dimensions:
+  - key: bank.iot.snmp.device.ip
+    value: this:device.address
+  - key: bank.iot.snmp.device.port
+    value: this:device.port
+  subgroups:
+  - subgroup: traffic32
+    table: true
+    metrics:
+    - key: bank.iot.snmp.interface.rx.errors.legacy32
+      value: oid:1.3.6.1.2.1.2.2.1.14
+      type: count
+    - key: bank.iot.snmp.interface.tx.errors.legacy32
+      value: oid:1.3.6.1.2.1.2.2.1.20
+      type: count
+    - key: bank.iot.snmp.interface.rx.bytes.legacy32
+      value: oid:1.3.6.1.2.1.2.2.1.10
+      type: count
+    - key: bank.iot.snmp.interface.tx.bytes.legacy32
+      value: oid:1.3.6.1.2.1.2.2.1.16
+      type: count
+    featureSet: traffic32
+    dimensions:
+    - key: bank.iot.snmp.interface.name
+      value: oid:1.3.6.1.2.1.2.2.1.2
+- group: Memory
+  interval:
+    minutes: 5
+  dimensions:
+  - key: bank.iot.snmp.device.ip
+    value: this:device.address
+  - key: bank.iot.snmp.device.port
+    value: this:device.port
+  subgroups:
+  - subgroup: Memory
+    table: false
+    metrics:
+    - key: bank.iot.snmp.memory.total.kb
+      value: oid:1.3.6.1.4.1.2021.4.5.0
+      type: gauge
+    - key: bank.iot.snmp.memory.available.kb
+      value: oid:1.3.6.1.4.1.2021.4.6.0
+      type: gauge
+    featureSet: memory
+- group: CPU
+  interval:
+    minutes: 5
+  dimensions:
+  - key: bank.iot.snmp.device.ip
+    value: this:device.address
+  - key: bank.iot.snmp.device.port
+    value: this:device.port
+  subgroups:
+  - subgroup: CPU
+    table: false
+    metrics:
+    - key: bank.iot.snmp.cpu.idle.percent
+      value: oid:1.3.6.1.4.1.2021.11.11.0
+      type: gauge
+    featureSet: cpu_ucd
+- group: Identity
+  interval:
+    minutes: 1440
+  dimensions:
+  - key: bank.iot.snmp.device.ip
+    value: this:device.address
+  - key: bank.iot.snmp.device.port
+    value: this:device.port
+  subgroups:
+  - subgroup: Identity
+    table: false
+    metrics:
+    - key: bank.iot.snmp.inventory.sample
+      value: oid:1.3.6.1.2.1.1.3.0
+      type: gauge
+    featureSet: identity
+    dimensions:
+    - key: bank.iot.snmp.identity.sysname
+      value: oid:1.3.6.1.2.1.1.5.0
+    - key: bank.iot.snmp.identity.sysobjectid
+      value: oid:1.3.6.1.2.1.1.2.0
+    - key: bank.iot.snmp.identity.chassis.mac
+      value: this:device.chassis_mac
