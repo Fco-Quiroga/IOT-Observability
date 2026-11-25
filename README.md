@@ -104,7 +104,7 @@ python -m app.cli upload --out out/pilot --check-access
 python -m app.cli upload --out out/pilot --apply --confirm-apply
 ```
 
-Topology publication may require --allow-provisional after identity audit. Choose an authorized --security-context. Configuration limit is 100 devices per batch; check actual ActiveGate capacity. Existing configurations are not deleted automatically; overlap blocks writes. For uncertain API responses, reconcile remote state before retrying. Optional branch and region route CSV templates are in config/.
+Topology publication may require --allow-provisional after identity audit. The `--security-context` option is empty by default: `dt.security_context` is omitted entirely from Smartscape events (not sent as null). Supply a nonempty authorized context only when required by your tenant's IAM and data access design. Confirm that the resulting visibility is appropriate; omitting the attribute does not remove an existing context. The descriptive branch/device lookup field is null when no context is configured. Configuration limit is 100 devices per batch; check actual ActiveGate capacity. Existing configurations are not deleted automatically; overlap blocks writes. For uncertain API responses, reconcile remote state before retrying. Optional branch and region route CSV templates are in config/.
 
 For full rollout, replace --limit 20 with --full and add --confirm-bulk to explicit apply commands. FULL writes are blocked if the normalized snapshot has fewer branches, zones or devices than its deduplicated input (including nested zone records). Resolve exclusions before publishing. For each intended write, run the same command with --preflight instead of --apply, retaining all confirmation flags; run ALL preflights before the first apply. This checks inventory completeness, configuration plan and overlap, provisional identity approval, topology batches and lookup parsing without persisting remote changes. Smartscape write authorization and final upload collisions cannot be guaranteed by preflight. Review existing-configurations.json and configuration-plan.json; stale managed batches and overlaps block writes. Reconcile previous partial deployments manually; no configuration is automatically deleted. Generate a full lookup export before running upload --full --apply --confirm-apply --confirm-bulk. Add --overwrite --confirm-overwrite only for intentional replacement. The three uploads are not transactional; retain previous snapshots. Pilot and full lookups have separate paths. Avoid overlapping active configurations.
 
@@ -113,7 +113,7 @@ For full rollout, replace --limit 20 with --full and add --confirm-bulk to expli
 | File | Purpose |
 |---|---|
 | monitoring-configurations.json | ActiveGate API payload (community placeholder only) |
-| topology.json | Minimal structural IDs, names, security context and parent relations |
+| topology.json | Minimal structural IDs, names, optional security context and parent relations |
 | iot_devices.jsonl / .csv | Devices enriched with branch and zone attributes |
 | iot_branches.jsonl / .csv | Branch inventory |
 | iot_zones.jsonl / .csv | Zone inventory |

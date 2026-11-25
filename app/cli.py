@@ -10,7 +10,7 @@ BASE='/platform/extensions/v2/extensions/custom:bank-iot-snmp/monitoring-configu
 RESOURCE='/platform/storage/resource-store/v1/files/tabular/lookup:'
 def common(p):
     p.add_argument('--out',type=Path,default=Path('out')); p.add_argument('--inventory',type=Path,default=Path('data')); p.add_argument('--registry',type=Path,default=Path('state/identities.json')); p.add_argument('--aliases',type=Path,default=ROOT/'config/inventory_aliases.yaml'); p.add_argument('--repair-coordinates',action='store_true')
-    p.add_argument('--branch'); p.add_argument('--region'); p.add_argument('--device-type',choices=['IP_CAMERA','NVR']); p.add_argument('--selection',type=Path); p.add_argument('--limit',type=int); p.add_argument('--full',action='store_true'); p.add_argument('--allow-provisional',action='store_true'); p.add_argument('--security-context',default='security-iot')
+    p.add_argument('--branch'); p.add_argument('--region'); p.add_argument('--device-type',choices=['IP_CAMERA','NVR']); p.add_argument('--selection',type=Path); p.add_argument('--limit',type=int); p.add_argument('--full',action='store_true'); p.add_argument('--allow-provisional',action='store_true'); p.add_argument('--security-context',default='',type=str.strip,help='Optional authorized Smartscape security context; omitted from events when empty')
 def controls(p):
     m=p.add_mutually_exclusive_group(); m.add_argument('--dry-run',action='store_true'); m.add_argument('--apply',action='store_true'); m.add_argument('--preflight',action='store_true',help='Validate a proposed write without modifying Dynatrace')
     p.add_argument('--confirm-apply',action='store_true'); p.add_argument('--confirm-bulk',action='store_true'); p.add_argument('--check-access',action='store_true'); p.add_argument('--auth',choices=['api-token','bearer'],type=str.lower,default='bearer')
@@ -26,7 +26,7 @@ def parser():
     return p
 def snapshot(a):
     s,r,audit=normalize(a.inventory,a.registry,a.aliases,a.repair_coordinates)
-    for b in s['branches']: b['security_context']=a.security_context
+    for b in s['branches']: b['security_context']=a.security_context or None
     dump(a.out/'inventory_report.json',r); dump(a.out/'audit.json',audit); dump(a.out/'normalized_inventory.json',s)
     print(json.dumps(r,ensure_ascii=False)); return s,r
 

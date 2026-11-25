@@ -204,3 +204,29 @@ def test_config_preflight_no_writes(fixture,monkeypatch):
     monkeypatch.setattr(cli,'Client',FakeClient)
     cli.main(['configure','--inventory',str(fixture),'--registry',str(fixture/'registry.json'),'--out',str(fixture/'out'),'--full','--preflight','--confirm-apply','--confirm-bulk'])
     assert not (fixture/'out/configuration-applied.json').exists()
+
+def test_optional_security_context(fixture):
+    from app import cli
+    s,_,_=run(fixture)
+    assert cli.parser().parse_args(['topology']).security_context==''
+    assert cli.parser().parse_args(['topology','--security-context','   ']).security_context==''
+    default=topology.build(s)
+    assert len(default)==4
+    assert all('dt.security_context' not in e for e in default)
+    assert topology.build(s,'')==default
+    assert topology.build(s,None)==default
+    assert topology.build(s,'   ')==default
+    explicit=topology.build(s,' authorized-context ')
+    assert all(e['dt.security_context']=='authorized-context' for e in explicit)
+    assert [topology.identity(e) for e in default]==[topology.identity(e) for e in explicit]
+    assert [e.get('static_edges') for e in default]==[e.get('static_edges') for e in explicit]
+
+def test_cli_optional_context(fixture):
+    from app import cli
+    args=['--inventory',str(fixture),'--registry',str(fixture/'registry.json'),'--out',str(fixture/'out'),'--full']
+    cli.main(['topology',*args])
+    events=load(fixture/'out/topology.json')
+    assert all('dt.security_context' not in e for e in events)
+    cli.main(['export',*args])
+    rows=[json.loads(l) for l in (fixture/'out/iot_devices.jsonl').read_text().splitlines()]
+    assert all(r['security_context'] is None for r in rows)

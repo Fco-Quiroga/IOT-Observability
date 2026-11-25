@@ -2,11 +2,12 @@ import json,hashlib
 TYPE={'IP_CAMERA':'CUSTOM_BANK_CAMERA','NVR':'CUSTOM_BANK_NVR'}
 def ref(t,k,v): return {'type':t,'id_components':[{k:v}]}
 def event(t,k,v,n,security,parent=None):
-    e={'event.version':1,**ref(t,k,v),'name':n,'custom.bank.'+k:v,'dt.security_context':security}
+    e={'event.version':1,**ref(t,k,v),'name':n,'custom.bank.'+k:v}
+    if security and security.strip(): e['dt.security_context']=security.strip()
     if parent: e['static_edges']={'belongs_to':[parent]}
     return e
 def identity(e): return (e['type'],json.dumps(e['id_components'],sort_keys=True))
-def build(s,security='security-iot'):
+def build(s,security=''):
     out=[]
     for b in s['branches']: out.append(event('CUSTOM_BANK_BRANCH','branch_id',b['branch_id'],b['structural_name'],security))
     for z in s['zones']: out.append(event('CUSTOM_BANK_ZONE','zone_id',z['zone_id'],z['structural_name'],security,ref('CUSTOM_BANK_BRANCH','branch_id',z['branch_id'])))
