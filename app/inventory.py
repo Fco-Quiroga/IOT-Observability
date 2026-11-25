@@ -31,6 +31,17 @@ def port(v):
         if isinstance(v,bool) or int(v)!=float(v) or not 1<=int(v)<=65535: return None
         return int(v)
     except (ValueError,TypeError,OverflowError): return None
+def first(r,*keys):
+    # Prefer explicit flat keys; also accept nested objects for dotted paths.
+    for key in keys:
+        v=r.get(key)
+        if v is None and '.' in key:
+            v=r
+            for part in key.split('.'):
+                v=v.get(part) if isinstance(v,dict) else None
+        if v is not None and text(v): return v
+    return None
+
 def coord(v,axis,repair):
     try:
         if isinstance(v,bool): return None
@@ -70,7 +81,7 @@ def normalize(directory, registry_path, aliases_path, repair=False):
             seen.add(key); out.append(r)
         return out
     ds=dedup(ds,'device'); bs=dedup(bs,'branch'); zs=dedup(zs,'zone')
-    branch_counts=Counter(text(r.get('branch_id',r.get('ID Sucursal'))) for r in bs)
+    branch_counts=Counter(text(first(r,'branch_id','ID Sucursal')) for r in bs)
     branches={}; zone_map={}; devices=[]
     name_alias={norm(k):norm(v) for k,v in aliases.get('branch_names',{}).items()}
     def bname(v):
@@ -80,11 +91,15 @@ def normalize(directory, registry_path, aliases_path, repair=False):
         if val not in CRIT: issue('invalid_criticality',entity,r); return None
         return val
     for r in bs:
-        bid=text(r.get('branch_id',r.get('ID Sucursal'))); latraw=r.get('latitude',r.get('location.lat')); lonraw=r.get('longitude',r.get('ubicación.location.lon'))
+        bid=text(first(r,'branch_id','ID Sucursal'))
+        if not bid or branch_counts[bid]>1:
+            issue('excluded_branch','branch',r,reason='missing ID' if not bid else 'duplicate ID'); continue
+        latraw=first(r,'latitude','lat','location.lat','location.latitude','ubicación.location.lat','ubicación.location.latitude')
+        lonraw=first(r,'longitude','lon','lng','location.lon','location.lng','location.longitude','ubicación.location.lon','ubicación.location.lng','ubicación.location.longitude')
         lat,lon=coord(latraw,'lat',repair),coord(lonraw,'lon',repair)
-        if not bid or branch_counts[bid]>1 or lat is None or lon is None:
-            issue('excluded_branch', 'branch',r,reason='missing/duplicate ID or invalid coordinates'); continue
-        if lat!=latraw or lon!=lonraw: issue('coordinate_normalization','branch',r,latitude=lat,longitude=lon)
+        if lat is None or lon is None:
+            issue('missing_or_invalid_coordinates','branch',r,latitude_valid=lat is not None,longitude_valid=lon is not None)
+        if (lat is not None and lat!=latraw) or (lon is not None and lon!=lonraw): issue('coordinate_normalization','branch',r,latitude=lat,longitude=lon)
         name=text(r.get('name')) or bid
         branches[bid]={**clean_extra(r),'branch_id':bid,'name':name,'office_type':r.get('office_type'),'address':r.get('address',r.get('location_street')),'city':r.get('city',r.get('Ciudad')),'commune':r.get('commune',r.get('Comuna')),'region':r.get('region',r.get('Región')),'country':r.get('country'),'latitude':lat,'longitude':lon,'criticality':critical(r,'branch'),'topology_status':'ACTIVE'}
         for zz in r.get('zones',[]):
@@ -95,7 +110,7 @@ def normalize(directory, registry_path, aliases_path, repair=False):
     for k,ids in byname.items():
         if len(ids)>1: issue('ambiguous_branch_name','branch',{'branch_ids':ids})
     def branch_ref(r):
-        bid=text(r.get('branch_id')); name=r.get('branch_name')
+        bid=text(first(r,'branch_id','ID Sucursal')); name=r.get('branch_name')
         if bid: return bid if bid in branches else None
         ids=byname.get(bname(name),[]); return ids[0] if len(ids)==1 else None
     conflicts=set()
@@ -144,7 +159,7 @@ def normalize(directory, registry_path, aliases_path, repair=False):
         elif m and mac_counts[m]==1: ci='TEMP-MAC-'+token(m); source='PROVISIONAL_MAC'
         elif a and p and endpoint_counts[endpoint(a,p)]==1: ci='TEMP-ENDPOINT-'+token(context+':'+endpoint(a,p)); source='PROVISIONAL_ENDPOINT'
         else: issue('unresolved_identity','device',r); continue
-        if not official: issue('provisional_identity','device',r,ci_id=ci,source=source)
+        if source!='CI_ID': issue('provisional_identity','device',r,ci_id=ci,source=source)
         for k in keys: registry['keys'][k]=ci
         registry['observations'][ci]={'identity_source':source,'mac':m,'ip':a,'source_ci_id':oldci or None}
         registry['names'].setdefault(ci,('Camera ' if typ=='IP_CAMERA' else 'NVR ')+ci)

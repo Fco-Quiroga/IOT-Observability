@@ -12,7 +12,7 @@ def common(p):
     p.add_argument('--out',type=Path,default=Path('out')); p.add_argument('--inventory',type=Path,default=Path('data')); p.add_argument('--registry',type=Path,default=Path('state/identities.json')); p.add_argument('--aliases',type=Path,default=ROOT/'config/inventory_aliases.yaml'); p.add_argument('--repair-coordinates',action='store_true')
     p.add_argument('--branch'); p.add_argument('--region'); p.add_argument('--device-type',choices=['IP_CAMERA','NVR']); p.add_argument('--selection',type=Path); p.add_argument('--limit',type=int); p.add_argument('--full',action='store_true'); p.add_argument('--allow-provisional',action='store_true'); p.add_argument('--security-context',default='security-iot')
 def controls(p):
-    m=p.add_mutually_exclusive_group(); m.add_argument('--dry-run',action='store_true'); m.add_argument('--apply',action='store_true')
+    m=p.add_mutually_exclusive_group(); m.add_argument('--dry-run',action='store_true'); m.add_argument('--apply',action='store_true'); m.add_argument('--preflight',action='store_true',help='Validate a proposed write without modifying Dynatrace')
     p.add_argument('--confirm-apply',action='store_true'); p.add_argument('--confirm-bulk',action='store_true'); p.add_argument('--check-access',action='store_true'); p.add_argument('--auth',choices=['api-token','bearer'],type=str.lower,default='bearer')
 def parser():
     p=argparse.ArgumentParser(); sub=p.add_subparsers(dest='command',required=True)
@@ -45,6 +45,20 @@ def select(s,a,pilot_default=False):
     bs={d['branch_id'] for d in ds}; zs={d['zone_id'] for d in ds}
     return {'devices':ds,'branches':[b for b in s['branches'] if b['branch_id'] in bs],'zones':[z for z in s['zones'] if z['zone_id'] in zs]},True
 
+def require_complete(report):
+    # Full publication must not silently lose source entities after deduplication.
+    if not isinstance(report,dict) or not isinstance(report.get('input'),dict) or not isinstance(report.get('active'),dict):
+        raise ValueError('FULL blocked: missing inventory completeness report')
+    lost={}
+    for kind in ('branches','zones','devices'):
+        raw,active=report['input'].get(kind),report['active'].get(kind)
+        if not isinstance(raw,int) or not isinstance(active,int) or raw<0 or active<0:
+            raise ValueError('FULL blocked: invalid inventory counts')
+        if active<raw: lost[kind]={'input':raw,'active':active,'excluded':raw-active}
+    if not report['active']['devices'] or not report['active']['branches']:
+        raise ValueError('FULL blocked: empty inventory')
+    if lost: raise ValueError('FULL blocked: incomplete inventory '+json.dumps(lost)+'; correct source and review audit.json')
+
 def guard(a,n,pilot,provisional=False):
     if not a.confirm_apply: raise ValueError('--confirm-apply required')
     if not pilot and not a.full: raise ValueError('--full required for complete writes')
@@ -55,15 +69,24 @@ def configure(a,s,pilot):
     if a.enable and not a.confirm_enable: raise ValueError('--confirm-enable required')
     configs=activegate.build(s,a.group,a.batch_size,a.features,activegate.routes(a.branch_routes,'branch_id'),activegate.routes(a.region_routes,'region'),a.timeout,a.retries,a.enable,a.max_repetitions,a.max_oids,not a.connected_udp,'pilot' if pilot else 'full')
     dump(a.out/'monitoring-configurations.json',configs)
-    if not a.apply and not a.check_access: return
+    if not a.apply and not a.check_access and not a.preflight: return
     if a.auth!='bearer': raise ValueError('Platform API requires Bearer authentication')
     client=Client(os.getenv('DT_APPS_URL',''),os.getenv('DT_PLATFORM_TOKEN') or os.getenv('DT_API_TOKEN'),'bearer'); old=client.configurations(BASE)
-    plan=activegate.plan(configs,old); dump(a.out/'configuration-plan.json',[{'action':k,'description':c['value']['description'],'id':i} for k,c,i in plan]); print('Existing configurations:',len(old))
-    if not a.apply: return
+    plan=activegate.plan(configs,old)
+    desired_keys={(c['scope'],c['value']['description']) for c in configs}
+    prefix='iot-devices | '+('pilot' if pilot else 'full')+' | '
+    existing_summary=[{'id':e['objectId'],'scope':e['scope'],'description':e['value'].get('description'),'enabled':e['value'].get('enabled'),'endpoints':len(e['value']['snmp']['devices'])} for e in old]
+    stale=[e for e in existing_summary if (e['description'] or '').startswith(prefix) and (e['scope'],e['description']) not in desired_keys]
+    dump(a.out/'existing-configurations.json',existing_summary)
+    dump(a.out/'configuration-plan.json',[{'action':k,'description':c['value']['description'],'id':i} for k,c,i in plan]+[{'action':'BLOCK_STALE','description':e['description'],'id':e['id']} for e in stale]); print('Existing configurations:',len(old))
+    if not a.apply and not a.preflight: return
     guard(a,sum(len(c['value']['snmp']['devices']) for c in configs),pilot)
-    if len(configs)>a.max_configs or any(k=='BLOCK' for k,c,i in plan): raise ValueError('Configuration limit or overlap; review plan')
+    if not configs: raise ValueError('No eligible SNMP endpoints')
+    if len(configs)>a.max_configs or stale or any(k=='BLOCK' for k,c,i in plan): raise ValueError('Configuration limit, stale managed batch or overlap; review configuration-plan.json and existing-configurations.json; no automatic deletion')
     if any(k=='UPDATE' for k,c,i in plan) and not a.update_existing: raise ValueError('--update-existing required')
     if a.enable and any(k=='CREATE' for k,c,i in plan): raise ValueError('Create disabled first, then enable existing configurations')
+    if any(k!='SKIP' for k,c,i in plan) and not os.getenv('SNMP_COMMUNITY'): raise ValueError('Missing SNMP_COMMUNITY')
+    if a.preflight: print('Configuration preflight OK; no write'); return
     results=[]
     for k,c,i in plan:
         if k=='SKIP': continue
@@ -78,7 +101,7 @@ def publish_topology(a,s,pilot):
     if a.previous:
         delta=topology.diff(load(a.previous),es); dump(a.out/'topology-diff.json',delta)
         if not a.refresh: es=[e for e in es if e in delta['added'] or e in delta['changed']]
-    if not a.apply:
+    if not a.apply and not a.preflight:
         if a.check_access: print('No non-writing permission probe for Smartscape ingest; verify token scopes in IAM.')
         return
     guard(a,len(s['devices']),pilot,any(d['identity_source']!='CI_ID' for d in s['devices']))
@@ -89,7 +112,9 @@ def publish_topology(a,s,pilot):
         old=load(checkpoint)
         if old['scope']!=scope: raise ValueError('Checkpoint does not match plan/tenant')
         accepted=set(old['accepted'])
-    for batch in topology.batches(es):
+    batches=list(topology.batches(es))
+    if a.preflight: print('Topology preflight OK; no ingest; IAM write scope not remotely verified'); return
+    for batch in batches:
         body=topology.payload(batch); h=topology.digest(body)
         if h in accepted: continue
         r=client.request('POST','/platform/ingest/v1/smartscape.events',data=body,headers={'Content-Type':'application/json'})
@@ -106,11 +131,12 @@ def upload(a):
         if f['lookupField']!=key or f['filePath']!='/lookups/iot'+('/piloto' if pilot else '')+'/'+path.stem: raise ValueError('Unsafe destination')
         if not pilot and manifest['report']['active'][{'iot_devices.jsonl':'devices','iot_branches.jsonl':'branches','iot_zones.jsonl':'zones'}[name]]!=len(rows): raise ValueError('Partial production snapshot')
         payloads.append((f,data))
-    if not a.apply and not a.check_access: print('Manifest verified'); return
-    c=Client(os.getenv('DT_APPS_URL',''),os.getenv('DT_PLATFORM_TOKEN') or os.getenv('DT_LOOKUP_TOKEN'),'bearer')
-    if a.apply:
-        guard(a,files[0]['count'],pilot)
+    if not a.apply and not a.check_access and not a.preflight: print('Manifest verified'); return
+    if a.apply or a.preflight:
+        if not pilot: require_complete(manifest['report'])
+        guard(a,next(f['count'] for f in files if f['file']=='iot_devices.jsonl'),pilot)
         if a.overwrite and not a.confirm_overwrite: raise ValueError('--confirm-overwrite required')
+    c=Client(os.getenv('DT_APPS_URL',''),os.getenv('DT_PLATFORM_TOKEN') or os.getenv('DT_LOOKUP_TOKEN'),'bearer')
     # Parse all first; no write until all previews pass.
     def form(f,data,write):
         params={'parsePattern':'JSON:json','lookupField':f['lookupField']}
@@ -133,6 +159,7 @@ def main(argv=None):
         s,r=snapshot(a)
         if a.command=='validate': return
         s,pilot=select(s,a,pilot_default=a.command in ('configure','topology'))
+        if (getattr(a,'apply',False) or getattr(a,'preflight',False)) and not pilot: require_complete(r)
         if a.command=='configure': configure(a,s,pilot)
         elif a.command=='topology': publish_topology(a,s,pilot)
         elif a.command=='export': lookup.export(s,a.out,pilot=pilot,report=r)

@@ -36,7 +36,11 @@ def test_bad_ip(fixture):
 
 def test_excluded_branch(fixture):
     change(fixture,'branches',lambda a:a[0].update(latitude=None))
-    s,r,_=run(fixture); assert not s['devices'] and not s['zones']
+    s,r,a=run(fixture); assert len(s['devices'])==2 and len(s['zones'])==1
+    assert s['branches'][0]['latitude'] is None and r['audit_counts']['missing_or_invalid_coordinates']==1
+    assert len(topology.build(s))==4
+    lookup.export(s,fixture/'null-coordinates',report=r)
+    assert all(json.loads(line)['latitude'] is None for line in (fixture/'null-coordinates/iot_devices.jsonl').read_text().splitlines())
 
 def test_orphan_zone(fixture):
     change(fixture,'cameras',lambda a:a[0].update(zone_id='missing'))
@@ -157,3 +161,46 @@ def test_platform_configure_uses_apps(fixture, monkeypatch):
     a=cli.parser().parse_args(['configure','--out',str(fixture),'--check-access','--full'])
     cli.configure(a,s,False)
     assert calls==[('https://apps.example.invalid','fake-token','bearer'),'/platform/extensions/v2/extensions/custom:bank-iot-snmp/monitoring-configurations']
+
+def test_nested_and_repaired_coordinates(fixture):
+    def edit(a):
+        b=a[0]; b.pop('latitude'); b.pop('longitude')
+        b['location']={'lat':-335000000,'lon':-710000000}
+    change(fixture,'branches',edit)
+    s,r,_=normalize(fixture,fixture/'registry.json',ROOT/'config/inventory_aliases.yaml',False)
+    assert len(s['devices'])==2 and s['branches'][0]['latitude'] is None
+    s,r,_=run(fixture)
+    assert s['branches'][0]['latitude']==-33.5 and s['branches'][0]['longitude']==-71
+
+def test_full_guard_no_remote_write(fixture,monkeypatch):
+    from app import cli
+    change(fixture,'cameras',lambda a:a[0].update(branch_id='unknown'))
+    monkeypatch.setattr(cli,'Client',lambda *a,**k:pytest.fail('No remote requests for incomplete FULL'))
+    args=['--inventory',str(fixture),'--registry',str(fixture/'registry.json'),'--out',str(fixture/'out'),'--full']
+    for command in ('configure','topology'):
+        for action in ('--preflight','--apply'):
+            with pytest.raises(SystemExit): cli.main([command,*args,action,'--confirm-apply','--confirm-bulk'])
+    cli.main(['export',*args])
+    monkeypatch.setenv('DT_APPS_URL','https://example.invalid')
+    monkeypatch.setenv('DT_PLATFORM_TOKEN','fake')
+    # Move the completeness guard ahead of any network operations.
+    with pytest.raises(SystemExit): cli.main(['upload',*args,'--apply','--confirm-apply','--confirm-bulk'])
+
+def test_preflight_provisional_blocks(fixture,monkeypatch):
+    from app import cli
+    change(fixture,'cameras',lambda a:a[1].update(ci_id=a[0]['ci_id']))
+    args=['--inventory',str(fixture),'--registry',str(fixture/'registry.json'),'--out',str(fixture/'out'),'--full','--preflight','--confirm-apply','--confirm-bulk']
+    monkeypatch.setattr(cli,'Client',lambda *a,**k:pytest.fail('No requests before provisional review'))
+    with pytest.raises(SystemExit): cli.main(['topology',*args])
+
+def test_config_preflight_no_writes(fixture,monkeypatch):
+    from app import cli
+    monkeypatch.setenv('DT_APPS_URL','https://example.invalid')
+    monkeypatch.setenv('DT_PLATFORM_TOKEN','fake')
+    monkeypatch.setenv('SNMP_COMMUNITY','fake')
+    class FakeClient:
+        def __init__(self,*a): pass
+        def configurations(self,path): return []
+    monkeypatch.setattr(cli,'Client',FakeClient)
+    cli.main(['configure','--inventory',str(fixture),'--registry',str(fixture/'registry.json'),'--out',str(fixture/'out'),'--full','--preflight','--confirm-apply','--confirm-bulk'])
+    assert not (fixture/'out/configuration-applied.json').exists()
