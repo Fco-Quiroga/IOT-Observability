@@ -118,4 +118,42 @@ def test_pagination(monkeypatch):
         def json(self): return self.p
     def req(method,path,**kw):
         calls.append(kw['params']); return R({'items':[{'objectId':str(len(calls))}],'nextPageKey':'next' if len(calls)==1 else None})
-    monkeypatch.setattr(c,'request',req); assert len(c.configurations('/test'))==2; assert calls==[{'pageSize':100},{'nextPageKey':'next'}]
+    monkeypatch.setattr(c,'request',req); assert len(c.configurations('/test'))==2; assert calls==[{}, {'page-key':'next'}]
+
+def test_platform_config_write(monkeypatch):
+    c=Client('https://example.invalid','fake-token','bearer')
+    calls=[]
+    class R:
+        def __init__(self,code): self.status_code=code
+        def json(self): return {'code':self.status_code,'objectId':'id1'}
+    def req(method,path,**kw):
+        calls.append((method,path,kw['json']))
+        return R(201 if method=='POST' else 200)
+    monkeypatch.setattr(c,'request',req)
+    conf={'scope':'ag_group-SNMP','value':{'enabled':False}}
+    assert c.create_configuration('/config',conf)=='id1'
+    c.update_configuration('/config/id1',{'enabled':True},'id1')
+    assert calls==[('POST','/config',conf),('PUT','/config/id1',{'value':{'enabled':True}})]
+    assert c.session.headers['Authorization']=='Bearer fake-token'
+
+def test_platform_incomplete_pagination(monkeypatch):
+    c=Client('https://example.invalid','fake-token','bearer')
+    class R:
+        def json(self): return {'items':[], 'totalCount':2}
+    monkeypatch.setattr(c,'request',lambda *a,**kw:R())
+    with pytest.raises(RuntimeError,match='Incomplete'): c.configurations('/config')
+
+def test_platform_configure_uses_apps(fixture, monkeypatch):
+    from app import cli
+    s,_,_=run(fixture)
+    monkeypatch.setenv('DT_APPS_URL','https://apps.example.invalid')
+    monkeypatch.setenv('DT_ENV_URL','https://live.example.invalid')
+    monkeypatch.setenv('DT_PLATFORM_TOKEN','fake-token')
+    calls=[]
+    class FakeClient:
+        def __init__(self,url,token,auth): calls.append((url,token,auth))
+        def configurations(self,path): calls.append(path); return []
+    monkeypatch.setattr(cli,'Client',FakeClient)
+    a=cli.parser().parse_args(['configure','--out',str(fixture),'--check-access','--full'])
+    cli.configure(a,s,False)
+    assert calls==[('https://apps.example.invalid','fake-token','bearer'),'/platform/extensions/v2/extensions/custom:bank-iot-snmp/monitoring-configurations']

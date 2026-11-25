@@ -78,18 +78,16 @@ These commands are local-only by default. Review inventory_report.json, audit.js
 
 ## Publish to your own Dynatrace environment
 
-Copy .env.example to .env and provide your HTTPS URLs and scoped credentials. Do not commit secrets. Install the extension first, check ActiveGate group, SNMP connectivity and permissions. SNMP v2c communities travel without encryption; restrict network access.
+Copy .env.example to .env and provide your HTTPS URLs and one scoped Platform Token. Do not commit secrets. Install the extension first, check ActiveGate group, SNMP connectivity and permissions. SNMP v2c communities travel without encryption; restrict network access. The Platform Extensions API uses the Apps domain and Bearer authentication; Smartscape ingestion uses the Live domain.
 
 | Variable | Purpose |
 |---|---|
-| DT_ENV_URL | Environment base URL |
-| DT_API_TOKEN | Extension configuration read/write |
+| DT_ENV_URL | `https://YOUR_TENANT.live.dynatrace.com` (Smartscape ingest) |
+| DT_APPS_URL | `https://YOUR_TENANT.apps.dynatrace.com` (extensions and Resource Store) |
+| DT_PLATFORM_TOKEN | Single Platform Token, Bearer authentication |
 | SNMP_COMMUNITY | Injected in memory on apply |
-| DT_TOPOLOGY_TOKEN | Smartscape event ingestion |
-| DT_APPS_URL | Apps base URL for Resource Store |
-| DT_LOOKUP_TOKEN | Bearer token for lookup upload |
 
-Use the appropriate token scopes and --auth bearer for configure/topology if required. Start with authorized endpoints only.
+Required Platform Token scopes and corresponding IAM permissions: `extensions:configurations:read`, `extensions:configurations:write`, `openpipeline:events.smartscape:ingest`, `storage:files:write`. Bearer is the default. Legacy separate token environment variables remain fallbacks if DT_PLATFORM_TOKEN is unset; configuration requests still require a Platform Token. No Classic API fallback is performed. Start with authorized endpoints only.
 
 ```bash
 # Review the configuration plan against the tenant
@@ -134,6 +132,6 @@ Correlate metrics using bank.iot.snmp.device.ip and bank.iot.snmp.device.port, a
 
 - [SNMP schema reference](https://docs.dynatrace.com/docs/ingest-from/extensions/develop-your-extensions/data-sources/snmp-extensions/snmp-schema-reference)
 - [Extension schemas](https://github.com/dynatrace-extensions/extensions-schemas/releases)
-- [Extensions 2.0 API](https://docs.dynatrace.com/docs/dynatrace-api/environment-api/extensions-20)
+- [Platform Extensions 2.0 API](https://developer.dynatrace.com/develop/sdks/client-extensions-v2/)
 - [Smartscape events](https://docs.dynatrace.com/docs/semantic-dictionary/model/smartscape-events)
 - [Lookup Data](https://docs.dynatrace.com/docs/platform/grail/lookup-data)

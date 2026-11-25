@@ -6,14 +6,14 @@ from .inventory import normalize,load,dump
 from . import topology,lookup,activegate
 from .dynatrace_client import Client
 ROOT=Path(__file__).resolve().parents[1]
-BASE='/api/v2/extensions/custom:bank-iot-snmp/monitoringConfigurations'
+BASE='/platform/extensions/v2/extensions/custom:bank-iot-snmp/monitoring-configurations'
 RESOURCE='/platform/storage/resource-store/v1/files/tabular/lookup:'
 def common(p):
     p.add_argument('--out',type=Path,default=Path('out')); p.add_argument('--inventory',type=Path,default=Path('data')); p.add_argument('--registry',type=Path,default=Path('state/identities.json')); p.add_argument('--aliases',type=Path,default=ROOT/'config/inventory_aliases.yaml'); p.add_argument('--repair-coordinates',action='store_true')
     p.add_argument('--branch'); p.add_argument('--region'); p.add_argument('--device-type',choices=['IP_CAMERA','NVR']); p.add_argument('--selection',type=Path); p.add_argument('--limit',type=int); p.add_argument('--full',action='store_true'); p.add_argument('--allow-provisional',action='store_true'); p.add_argument('--security-context',default='security-iot')
 def controls(p):
     m=p.add_mutually_exclusive_group(); m.add_argument('--dry-run',action='store_true'); m.add_argument('--apply',action='store_true')
-    p.add_argument('--confirm-apply',action='store_true'); p.add_argument('--confirm-bulk',action='store_true'); p.add_argument('--check-access',action='store_true'); p.add_argument('--auth',choices=['api-token','bearer'],type=str.lower,default='api-token')
+    p.add_argument('--confirm-apply',action='store_true'); p.add_argument('--confirm-bulk',action='store_true'); p.add_argument('--check-access',action='store_true'); p.add_argument('--auth',choices=['api-token','bearer'],type=str.lower,default='bearer')
 def parser():
     p=argparse.ArgumentParser(); sub=p.add_subparsers(dest='command',required=True)
     for name in ('validate','configure','topology','export','upload'):
@@ -56,7 +56,8 @@ def configure(a,s,pilot):
     configs=activegate.build(s,a.group,a.batch_size,a.features,activegate.routes(a.branch_routes,'branch_id'),activegate.routes(a.region_routes,'region'),a.timeout,a.retries,a.enable,a.max_repetitions,a.max_oids,not a.connected_udp,'pilot' if pilot else 'full')
     dump(a.out/'monitoring-configurations.json',configs)
     if not a.apply and not a.check_access: return
-    client=Client(os.getenv('DT_ENV_URL',''),os.getenv('DT_API_TOKEN'),a.auth); old=client.configurations(BASE)
+    if a.auth!='bearer': raise ValueError('Platform API requires Bearer authentication')
+    client=Client(os.getenv('DT_APPS_URL',''),os.getenv('DT_PLATFORM_TOKEN') or os.getenv('DT_API_TOKEN'),'bearer'); old=client.configurations(BASE)
     plan=activegate.plan(configs,old); dump(a.out/'configuration-plan.json',[{'action':k,'description':c['value']['description'],'id':i} for k,c,i in plan]); print('Existing configurations:',len(old))
     if not a.apply: return
     guard(a,sum(len(c['value']['snmp']['devices']) for c in configs),pilot)
@@ -68,10 +69,8 @@ def configure(a,s,pilot):
         if k=='SKIP': continue
         c=activegate.inject(c,os.getenv('SNMP_COMMUNITY'))
         if k=='CREATE':
-            resp=client.request('POST',BASE,json=[c]).json()
-            if not isinstance(resp,list) or len(resp)!=1 or 'objectId' not in resp[0] or resp[0].get('code',500)>=300: raise RuntimeError('Create not confirmed; reconcile remote state')
-            i=resp[0]['objectId']
-        else: client.request('PUT',BASE+'/'+quote(i,safe=''),json={'value':c['value']})
+            i=client.create_configuration(BASE,c)
+        else: client.update_configuration(BASE+'/'+quote(i,safe=''),c['value'],i)
         results.append({'action':k,'id':i}); dump(a.out/'configuration-applied.json',results)
 
 def publish_topology(a,s,pilot):
@@ -83,7 +82,7 @@ def publish_topology(a,s,pilot):
         if a.check_access: print('No non-writing permission probe for Smartscape ingest; verify token scopes in IAM.')
         return
     guard(a,len(s['devices']),pilot,any(d['identity_source']!='CI_ID' for d in s['devices']))
-    client=Client(os.getenv('DT_ENV_URL',''),os.getenv('DT_TOPOLOGY_TOKEN'),a.auth)
+    client=Client(os.getenv('DT_ENV_URL',''),os.getenv('DT_PLATFORM_TOKEN') or os.getenv('DT_TOPOLOGY_TOKEN'),a.auth)
     checkpoint=a.out/'topology-checkpoint.json'; scope=hashlib.sha256((client.url+a.security_context).encode()+topology.payload(es)).hexdigest()
     accepted=set()
     if a.resume and checkpoint.exists():
@@ -108,7 +107,7 @@ def upload(a):
         if not pilot and manifest['report']['active'][{'iot_devices.jsonl':'devices','iot_branches.jsonl':'branches','iot_zones.jsonl':'zones'}[name]]!=len(rows): raise ValueError('Partial production snapshot')
         payloads.append((f,data))
     if not a.apply and not a.check_access: print('Manifest verified'); return
-    c=Client(os.getenv('DT_APPS_URL',''),os.getenv('DT_LOOKUP_TOKEN'),'bearer')
+    c=Client(os.getenv('DT_APPS_URL',''),os.getenv('DT_PLATFORM_TOKEN') or os.getenv('DT_LOOKUP_TOKEN'),'bearer')
     if a.apply:
         guard(a,files[0]['count'],pilot)
         if a.overwrite and not a.confirm_overwrite: raise ValueError('--confirm-overwrite required')
