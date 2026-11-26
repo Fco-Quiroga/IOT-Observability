@@ -135,3 +135,16 @@ Correlate metrics using bank.iot.snmp.device.ip and bank.iot.snmp.device.port, a
 - [Platform Extensions 2.0 API](https://developer.dynatrace.com/develop/sdks/client-extensions-v2/)
 - [Smartscape events](https://docs.dynatrace.com/docs/semantic-dictionary/model/smartscape-events)
 - [Lookup Data](https://docs.dynatrace.com/docs/platform/grail/lookup-data)
+
+## SNMP capability discovery (optional, read-only)
+
+Use an authorized on-prem runtime with UDP access to the actual inventory. Do not send corporate inventory or credentials to a public runtime. The discovery tool does not modify Dynatrace or devices and does not require a Dynatrace token. Use the normalized_inventory.json from a full run or iot_devices.jsonl. Optional firmware fields refine stratification. Install the separate discovery requirements.
+
+```bash
+pip install -r requirements-discovery.txt
+python -m app.snmp_discovery --inventory /secure/path/normalized_inventory.json --out out/discovery
+# Review sample_plan.csv, then run the same command with:
+python -m app.snmp_discovery --inventory /secure/path/normalized_inventory.json --out out/discovery --apply --confirm-authorized
+```
+
+Defaults: 3 devices per type/vendor/model/known firmware, diverse branches, 4 concurrent devices, 2s timeout, no retries, maximum 120 targets and first 4 NVR channels (bounded by reported count). Only inventory endpoints are queried. All requests are GET or GETNEXT; no SET or unrestricted walk. The community is requested without echo, or supplied via SNMP_COMMUNITY. SNMP v2c is unencrypted. Reports remain local and can contain sensitive IPs and SNMP names. The sample plan and coverage report contain aggregate counts. Device results distinguish NOT_EXPOSED (absent instance/object or column), NOT_SUPPORTED (explicit response), TIMEOUT, ERROR, UNKNOWN_VALUE, NOT_TESTED and SUPPORTED. No response is not proof of incompatibility. Percentages refer to sampled eligible devices, not the entire fleet. Video status is device-reported, not end-to-end recording verification. See [Hanwha MIB guide](https://upload.hanwhavision.com/hanwha-global/wp-content/uploads/2021/09/Hanwha-Vision_SNMP_MIB_Guide_EN.pdf), pages 3–6. The Dynatrace extension is unchanged until actual compatibility is measured.
